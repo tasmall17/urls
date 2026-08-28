@@ -1,115 +1,93 @@
 # urls
 
-**Dump every open browser tab on your Mac to the clipboard or a Markdown file — from one terminal command.**
+**Get every tab you have open, out of every browser, in one command.**
 
-Safari, Brave, Chrome, Edge, Vivaldi, Firefox, Waterfox and Zen, all in a single sweep.
-No extensions, no browser sign-in, no dependencies beyond what macOS already ships.
+Forty tabs across Safari, a Chrome window, and a Firefox you forgot about. You want that list
+somewhere useful — a note, a message, a doc. Right now your options are clicking through every
+window or installing four different extensions.
+
+`urls` just gives you the list.
 
 ```
 $ urls
-Brave — 2026-08-28 13:29
+Safari — 2026-08-28 14:32
 ---
-https://www.clearancejobs.com/jobs?clearance=2&keywords=cybersecurity
-http://localhost:8080/budgets
+https://news.ycombinator.com/item?id=41200000
+https://developer.mozilla.org/en-US/docs/Web/CSS/grid
 
-Waterfox — 2026-08-28 13:29
+Chrome — 2026-08-28 14:32
 ---
-https://neovim.io/
-https://www.reddit.com/r/zsh/comments/zvrqmi/how_do_i_move_filesdirectories_exclusively/
+http://localhost:3000/dashboard
+https://github.com/charmbracelet/vhs
 ```
 
-Plain one-per-line output, like `ls -1`. The browser name plus `---` is also a Markdown
-setext heading, so the same text renders with real headings when you paste it into a doc.
+One URL per line, like `ls -1`. No JSON, no bullets to strip out, nothing to clean up. And
+because the browser name sits above a line of dashes, the exact same text renders as proper
+headings when you paste it into anything that understands Markdown.
+
+**Works with:** Safari · Brave · Chrome · Edge · Vivaldi · Firefox · Waterfox · Zen
 
 ## Contents
 
-- [**Quick start**](#quick-start) — five commands, copy and paste
-- [**Install**](#install) — clone, run `./install.sh`, done
-  - [About the permission prompts](#about-the-permission-prompts) — what macOS asks, why, and what the installer does about it
-  - [Installer options](#installer-options) — `--prefix`, `--no-keys`, `--no-grant`, `--yes`
-- [**Usage**](#usage) — every flag, with examples
-  - [Key bindings](#key-bindings) — <kbd>ctrl</kbd>+<kbd>x</kbd> <kbd>u</kbd> / <kbd>m</kbd>, and a system-wide hotkey
-  - [Shell support](#shell-support) — zsh and bash, and which rc files get touched
-  - [Environment](#environment) — `URLS_OUTDIR`, `URLS_FOOTER`, `URLS_BIN_DIR`
-- [**How it works**](#how-it-works) — AppleScript, session stores, and the mozLz4 decoder
-- [Requirements](#requirements) · [Troubleshooting](#troubleshooting) · [Uninstall](#uninstall) · [License](#license)
+- [Install](#install) — five steps, with what you should see after each one
+- [If it didn't work](#if-it-didnt-work) — the three things that actually go wrong
+- [Using it](#using-it) — the commands you'll type every day
+- [Keyboard shortcuts](#keyboard-shortcuts) — grab your tabs without typing anything
+- [Every option](#every-option) — the full flag list
+- [How it works](#how-it-works) — the interesting part, if you like this sort of thing
+- [Troubleshooting](#troubleshooting) · [Uninstall](#uninstall) · [License](#license)
 
-## Quick start
+---
 
-Five commands. Copy and paste each one in order — every block has a copy button on its right.
+## Install
 
-**1. Clone the repo** (anywhere you like; `~/Dev` is a fine home)
+### Step 1 — Download it
 
 ```sh
 git clone https://github.com/tasmall17/urls.git
 ```
 
-**2. Go into it**
+Put it wherever you keep projects. It doesn't care where it lives, and you can move or delete
+the folder later without breaking anything — the installer copies the command out of it.
 
 ```sh
 cd urls
 ```
 
-**3. Run the installer**
+### Step 2 — Run the installer
 
 ```sh
 ./install.sh
 ```
 
-macOS will pop up dialogs saying *"Terminal wants to control Safari"* — one per browser.
-**Click OK on every one.** That is the entire setup; see
-[About the permission prompts](#about-the-permission-prompts) for why.
+**That `./` at the front matters.** Without it, your shell searches your `PATH` for something
+called `install.sh`, doesn't find it, and tells you `command not found`. The `./` says "the
+one right here in this folder."
 
-**4. Reload your shell** so the new command is on your `PATH`
+You should see something like this:
 
-```sh
-exec zsh
+```
+urls — installing
+  ✓ python3 found (Python 3.9.6)
+  ✓ installed /Users/you/.local/bin/urls
+  ✓ updated /Users/you/.zshrc (zsh)
+  ✓ bound ctrl-x u (clipboard) and ctrl-x m (markdown file)
 ```
 
-**5. Try it**
+### Step 3 — Click OK on the permission boxes
 
-```sh
-urls
-```
+macOS will pop up a dialog that says something like **"Terminal wants to control Safari."**
+You'll get one per browser. **Click OK on every single one.**
 
-You should see your open tabs, grouped by browser. If you do, you're done — and these now work
-anywhere in your terminal:
+This looks alarming and isn't. macOS requires your permission before any terminal program can
+talk to a browser, and reading your open tabs is exactly the kind of thing it wants you to
+approve on purpose. The installer deliberately triggers all of these prompts now, while you're
+sitting there paying attention, so they don't ambush you later.
 
-```sh
-urls -c      # every open tab -> clipboard
-urls -md     # every open tab -> ~/Downloads/open-urls-<date>.md
-urls -s      # just Safari
-```
+Nothing can click these for you — Apple stores the answers in a database that's protected at
+the OS level, and no script is allowed to write to it. That's the point of it.
 
-Plus two keyboard chords, no typing required: <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>u</kbd>
-copies every tab, <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>m</kbd> writes the Markdown file.
-
-**Updating later**, from inside the repo folder:
-
-```sh
-git pull && ./install.sh
-```
-
-## Install
-
-The [quick start](#quick-start) above *is* the whole procedure. This section covers what those
-commands actually do, and how to change it.
-
-`./install.sh` installs the command to `~/.local/bin`, puts it on your `PATH`, adds two terminal key
-bindings, and walks you through the macOS permission prompts. Re-running the installer is
-always safe — it replaces its own block rather than stacking up duplicates.
-
-> **First time on a new Mac?** Read [About the permission prompts](#about-the-permission-prompts)
-> — it explains the dialogs the installer raises and why clicking OK is the whole setup.
-> Prefer to change what gets installed? See [Installer options](#installer-options).
-
-### About the permission prompts
-
-macOS gates Apple Events behind TCC, so a terminal cannot read a browser's tabs until you
-approve it. **No script can grant that for you** — the permission store is SIP-protected and
-`tccutil` can only reset entries, never create them. What the installer does instead is
-*trigger* every prompt up front, so you click OK a few times during install and never get
-ambushed later:
+When they're all approved you'll see:
 
 ```
 Browser access
@@ -119,153 +97,238 @@ Browser access
   ✓ can write exports to /Users/you/Downloads
 ```
 
-It only touches browsers you actually have installed. For one that isn't running it asks
-before opening it, since authorizing requires the app to be up; answer `n` and that browser
-simply prompts on first use instead. `--yes` approves those launches without asking,
-`--no-grant` skips the whole step.
+### Step 4 — Restart your shell
 
-One honest caveat: the approval belongs to the **terminal app** you ran the installer from.
-Launching `urls` from a different terminal — iTerm when you installed from Terminal, say —
-produces one more round of prompts. That's macOS's model, not something `urls` can avoid.
+```sh
+exec zsh
+```
 
-### Installer options
+Using bash? Run `exec bash` instead.
 
-| Flag | Effect |
+**This is the step people skip, and it's why "it didn't work" for most of them.** The installer
+added a line to your shell's config file, but the terminal you're sitting in right now started
+*before* that line existed. It has no idea the new command is there. `exec zsh` restarts your
+shell so it reads the config again. Opening a brand new terminal tab does the same thing.
+
+### Step 5 — Try it
+
+```sh
+urls
+```
+
+You should see your open tabs, grouped by browser. That's it — you're done. The command now
+works from any folder, in any terminal window, forever.
+
+---
+
+## If it didn't work
+
+Three things go wrong. It's almost always the first one.
+
+**`zsh: command not found: urls`**
+You skipped Step 4, or you ran the installer in one window and are typing in another older one.
+Run `exec zsh` (or `exec bash`), or just open a new terminal tab, and try again.
+
+**`permission denied: ./install.sh`**
+The executable bit got stripped, usually by downloading the ZIP from GitHub instead of using
+`git clone`. Fix it and re-run:
+
+```sh
+chmod +x install.sh uninstall.sh bin/urls
+./install.sh
+```
+
+**`urls: no open tabs found`**
+This one is usually correct rather than broken. It means no browser is running, or every tab
+you have open is a blank new-tab page — `urls` filters those out on purpose so you don't get a
+list of `favorites://` five times. Open a real page in a browser and run it again.
+
+If Safari and Chrome come back empty but Firefox works, you clicked "Don't Allow" on a
+permission box. Jump to [Troubleshooting](#troubleshooting).
+
+---
+
+## Using it
+
+The four commands worth remembering:
+
+```sh
+urls          # every open tab, printed to the terminal
+urls -c       # every open tab, copied to your clipboard
+urls -md      # every open tab, saved to ~/Downloads/open-urls-<date>.md
+urls -s       # just Safari
+```
+
+Add a browser letter to narrow it down, and the letters combine with the output ones:
+
+```sh
+urls -cb      # Brave's tabs -> clipboard
+urls -smd     # Safari's tabs -> Markdown file
+urls -cmd     # everything -> clipboard AND a file
+```
+
+Flags stack in any order and `md` always reads as one piece, so `-smd` means "Safari, as
+Markdown" rather than three separate letters. If you'd rather be explicit, the long names work
+too: `urls --safari --clip`.
+
+**Browser letters:** `-s` Safari · `-b` Brave · `-g` Chrome (Google) · `-e` Edge ·
+`-v` Vivaldi · `-f` Firefox · `-w` Waterfox · `-z` Zen
+
+Name no browser and you get every one that's currently running. Browsers you don't have
+installed are skipped silently, so the same command works on any Mac.
+
+---
+
+## Keyboard shortcuts
+
+The installer sets up two chords that work anywhere in your terminal:
+
+| Press | And you get |
 |---|---|
-| `--prefix DIR` | install the command somewhere other than `~/.local/bin` |
-| `--no-keys` | skip the <kbd>ctrl</kbd>+<kbd>x</kbd> bindings |
-| `--shell zsh\|bash\|both` | set up a shell other than your login shell |
-| `--no-grant` | skip the permission step entirely |
-| `--yes` | don't ask before opening a browser to authorize it |
+| <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>u</kbd> | every open tab on your clipboard |
+| <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>m</kbd> | every open tab in a Markdown file |
 
-## Usage
+Hold <kbd>ctrl</kbd> and tap <kbd>x</kbd>, let go, then tap the letter. Whatever you were
+halfway through typing stays exactly where it was.
 
-| Command | What it does |
-|---|---|
-| `urls` | every running browser → stdout |
-| `urls -c` | → clipboard |
-| `urls -md` | → `~/Downloads/open-urls-<date>-<time>.md` |
-| `urls -s` | Safari only |
-| `urls -smd` | Safari only → Markdown file |
-| `urls -cb` | Brave only → clipboard |
-| `urls -cmd` | everything → clipboard **and** a file |
-| `urls -l` | bullet-list Markdown (`- <url>`) |
-| `urls --browsers` | list the browsers it knows about |
-| `urls -h` | help |
+Don't want them? `./install.sh --no-keys`.
 
-Flags bundle in any order, and `md` is parsed as a single token — so `-smd` reads as
-"Safari + Markdown", not "s, m, d". Long forms work too: `urls --safari --clip`.
+**Want a shortcut that works when the terminal isn't even open?** Make one in Shortcuts.app:
+New Shortcut → add a **Run Shell Script** action → put `~/.local/bin/urls -c` in it → assign a
+key combination in the shortcut's info panel. Now any app, any time, one keypress.
 
-**Browsers:** `-s` Safari · `-b` Brave · `-g` Chrome · `-e` Edge · `-v` Vivaldi ·
-`-f` Firefox · `-w` Waterfox · `-z` Zen. Name none and you get every one that is running.
+### zsh, bash, or both
 
-**Output:** `-c` clipboard · `-md` file. Name neither and it prints to stdout. `-c` and `-md`
-are destinations, not filters, so they compose freely with the browser letters.
+Both shells are fully supported, key bindings included. The installer figures out which one you
+use and sets that one up. To override it:
 
-### Key bindings
+```sh
+./install.sh --shell bash     # or: zsh, both
+```
 
-The installer binds two chords in your interactive shell:
+`urls` itself is an ordinary bash script with no zsh dependency, and it runs on the bash 3.2
+that Apple still ships, so there's nothing extra to install.
 
-| Chord | Action |
-|---|---|
-| <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>u</kbd> | all open tabs → clipboard |
-| <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>m</kbd> | all open tabs → Markdown file |
+For the curious, here's where the config goes. bash needs two files because a login shell (what
+Terminal opens) reads one set of files and a `bash` you start by hand reads a different one —
+put the config in only one and it mysteriously works half the time.
 
-They run without disturbing whatever you were typing. Skip them with `./install.sh --no-keys`.
-
-### Shell support
-
-**zsh and bash are both fully supported**, including the key bindings. The installer detects
-your login shell and sets up the matching one; `--shell bash`, `--shell zsh` or `--shell both`
-overrides that.
-
-`urls` itself is a plain bash script and has no zsh dependency — it runs fine under the
-bash 3.2 that Apple still ships, so there's nothing to install and no newer bash required.
-Only the key bindings are shell-specific: zsh gets ZLE widgets bound with `bindkey`, bash gets
-`bind -x`. Both were tested by driving a real terminal session and pressing the chord.
-
-Where the block goes:
-
-| Shell | Files touched |
+| Shell | Files it touches |
 |---|---|
 | zsh | `~/.zshrc` |
-| bash | `~/.bashrc` **and** your login file — the first existing of `~/.bash_profile`, `~/.bash_login`, `~/.profile` |
+| bash | `~/.bashrc` **and** the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile` that already exists |
 
-bash needs both because a login shell (what Terminal.app starts) reads only the login file,
-while a plain `bash` inside another shell reads only `~/.bashrc` — put the block in one and it
-silently does nothing in the other half of the time. The installer will **not** create a
-`~/.bash_profile` when you already have a `~/.profile`, since that would stop bash from ever
-reading `~/.profile` again.
+It will never create a `~/.bash_profile` if you already have a `~/.profile`, because doing that
+would quietly stop bash from ever reading your `.profile` again.
 
-For a hotkey that works when the terminal *isn't* focused, make a Shortcuts.app shortcut with
-a **Run Shell Script** action calling `~/.local/bin/urls -c`, then assign it a key in the
-shortcut's info panel.
+---
 
-### Environment
+## Every option
 
-| Variable | Effect |
+**The command**
+
+| Flag | What it does |
 |---|---|
-| `URLS_OUTDIR` | where `-md` writes (default `~/Downloads`) |
-| `URLS_FOOTER=0` | omit the cheat sheet appended to Markdown files |
-| `URLS_BIN_DIR` | install location, read by `install.sh`/`uninstall.sh` |
+| *(none)* | print every running browser's tabs |
+| `-c` | copy to clipboard |
+| `-md` | write to `~/Downloads/open-urls-<date>-<time>.md` |
+| `-s -b -g -e -v -f -w -z` | Safari, Brave, Chrome, Edge, Vivaldi, Firefox, Waterfox, Zen |
+| `-l` | format as a bullet list (`- https://…`) |
+| `--browsers` | show which browsers it knows about |
+| `--version` | print the version |
+| `-h` | help |
+
+**The installer**
+
+| Flag | What it does |
+|---|---|
+| `--prefix DIR` | install the command somewhere other than `~/.local/bin` |
+| `--shell zsh\|bash\|both` | set up a shell other than the one you log in with |
+| `--no-keys` | skip the keyboard shortcuts |
+| `--no-grant` | skip the permission prompts |
+| `--yes` | don't ask before opening a closed browser to authorize it |
+
+**Settings**
+
+| Variable | What it changes |
+|---|---|
+| `URLS_OUTDIR` | where `-md` saves files (default `~/Downloads`) |
+| `URLS_FOOTER=0` | leave the cheat sheet off the bottom of Markdown files |
+| `URLS_BIN_DIR` | where the installer puts the command |
+
+---
 
 ## How it works
 
-Two very different mechanisms, because browsers don't agree on anything:
+Browsers don't agree on anything, so there are two completely different mechanisms under the
+hood.
 
-**Safari, Brave, Chrome, Edge, Vivaldi** are read **live** over AppleScript
-(`URL of every tab of every window`). The script checks `application "X" is running` first,
-so it never launches a browser you had closed.
+**Safari, Brave, Chrome, Edge and Vivaldi** are read live through AppleScript, which is macOS's
+built-in way for programs to ask each other questions. `urls` checks whether each browser is
+already running before it asks, so it will never launch a browser you had deliberately closed.
 
-**Firefox, Waterfox and Zen** expose no AppleScript tab API at all. Instead the script reads
-the browser's own session store — the newest of `recovery.jsonlz4`, `previous.jsonlz4` or
-`sessionstore.jsonlz4` under your profile — and pulls `entries[index-1].url` for each live
-tab, ignoring closed tabs and closed windows.
+**Firefox, Waterfox and Zen** don't offer that. There is simply no way to ask them what tabs
+are open. What they do have is a session file on disk — the one that restores your tabs after a
+crash — so `urls` reads that instead and pulls out the current page of every live tab.
 
-Those files are **mozLz4**: an 8-byte `mozLz40\0` magic, a little-endian `uint32` of the
-decompressed size, then a raw LZ4 block. The `lz4` Python module isn't part of macOS's stock
-Python, and requiring a `pip install` for a "just clone and run" tool is a bad trade — so
-`urls` carries a small pure-Python LZ4 block decoder instead. It bulk-copies non-overlapping
-matches and only falls back to a byte loop for overlapping runs, which keeps a 1.5 MB session
-file well under a second.
+That file isn't plain text. It's compressed in a Mozilla-specific format called mozLz4, and the
+Python library that reads it isn't included with macOS. Requiring a `pip install` to run a
+clone-and-go tool seemed like a bad trade, so `urls` carries its own small LZ4 decoder written
+in plain Python. It handles a 1.5 MB session file in well under a second.
 
-**One caveat:** Firefox-family browsers flush that session file every ~15 seconds, so their
-results can trail the live window by a few seconds. The AppleScript browsers are always current.
+**One honest caveat:** Firefox-family browsers only save that file every 15 seconds or so, so a
+tab you opened moments ago might not show up yet. Give it a moment and run it again. The
+AppleScript browsers are always current.
 
-Start pages (`favorites://`, `topsites://`, `about:newtab`, `chrome://newtab` and friends)
-are filtered out, so a window full of empty new tabs reports nothing rather than noise.
+New-tab and start pages (`favorites://`, `about:newtab`, `chrome://newtab` and friends) get
+filtered out, so a window full of empty tabs reports nothing instead of a screen of noise.
 
-## Requirements
+### What it needs
 
-- macOS (uses AppleScript and `pbcopy`)
-- zsh or bash — including Apple's stock bash 3.2, no upgrade needed
-- `python3` — only for the Firefox family. Stock macOS Python is fine; if it's missing,
-  `xcode-select --install` provides it. Everything else still works without it.
+- macOS. It uses AppleScript and `pbcopy`, so it's not portable to Linux.
+- zsh or bash, including Apple's stock bash 3.2. No upgrade needed.
+- `python3`, but only for Firefox, Waterfox and Zen. If you don't have it, everything else
+  still works and the installer says so. `xcode-select --install` adds it.
+
+---
 
 ## Troubleshooting
 
-**"no open tabs found"** — the browser isn't running, or every tab is a blank new-tab page.
+**Safari, Chrome or Brave return nothing, but Firefox works.**
+You denied the Automation permission for that browser. Open System Settings → Privacy &
+Security → Automation and switch your terminal back on for it. If the browser isn't listed at
+all, reset the prompts with `tccutil reset AppleEvents` and run `./install.sh` again to be
+asked fresh.
 
-**Safari/Chrome/Brave return nothing while Firefox works** — Automation permission was denied
-for that browser (see [About the permission prompts](#about-the-permission-prompts)). Re-enable it in System Settings → Privacy & Security → Automation, or reset
-the prompts with `tccutil reset AppleEvents` and re-run `./install.sh` to be asked again.
+**`-md` doesn't write anything.**
+`~/Downloads` is permission-protected too. Allow your terminal under System Settings → Privacy
+& Security → Files and Folders, or send the file somewhere else with
+`URLS_OUTDIR=~/Desktop urls -md`.
 
-**`-md` writes nothing** — `~/Downloads` is TCC-protected too, same story as
-[the browser prompts](#about-the-permission-prompts). Allow your terminal under
-System Settings → Privacy & Security → Files and Folders, or point `URLS_OUTDIR` elsewhere.
+**A Firefox tab I just opened is missing.**
+Wait about 15 seconds and try again. See the caveat in [How it works](#how-it-works).
 
-**A Firefox-family browser is missing a tab you just opened** — wait ~15 seconds for the
-session store to flush. This is a limitation of reading the session file, not a bug.
+**The prompts came back in a different terminal app.**
+Expected. macOS grants Automation access per application, so approving it for Terminal doesn't
+approve it for iTerm or VS Code. Approve it once more there and it sticks.
 
-**`urls: command not found` after installing** — run `exec zsh` (or `exec bash`), or open a
-new terminal tab.
+**The keyboard shortcuts don't do anything.**
+Restart your shell with `exec zsh` (or `exec bash`). If they work in one bash window but not
+another, you installed an older version — re-run `./install.sh` and it will fix both files.
 
-**Bindings work in one bash session but not another** — you likely installed before this was
-fixed; re-run `./install.sh` and it will cover both `~/.bashrc` and your login file. See
-[Shell support](#shell-support).
+---
 
-**Prompts appear again in a different terminal app** — expected; approvals are per terminal.
-[Why](#about-the-permission-prompts).
+## Updating
+
+From inside the folder you cloned:
+
+```sh
+git pull
+./install.sh
+```
+
+Re-running the installer is always safe. It replaces its own config block instead of piling up
+duplicates, no matter how many times you run it.
 
 ## Uninstall
 
@@ -273,10 +336,10 @@ fixed; re-run `./install.sh` and it will cover both `~/.bashrc` and your login f
 ./uninstall.sh
 ```
 
-Removes the command and its shell block. Files you already exported are left alone.
-It reads `URLS_BIN_DIR` the same way [the installer](#installer-options) does, so a
-`--prefix` install uninstalls cleanly with `URLS_BIN_DIR=DIR ./uninstall.sh`.
+Removes the command and cleans its block out of your shell config. Markdown files you already
+exported are left alone. If you installed with `--prefix`, use
+`URLS_BIN_DIR=DIR ./uninstall.sh`.
 
 ## License
 
-MIT
+MIT. Do whatever you like with it.

@@ -9,6 +9,16 @@
 #   ./install.sh --yes           don't ask before opening a browser to authorize it
 #   ./install.sh --help
 
+# Re-exec under bash if invoked as `sh install.sh` or `zsh install.sh`. Shells read
+# a script incrementally, so doing this before any bash-only syntax appears means
+# the wrong shell never reaches a construct it cannot parse.
+# Note: macOS /bin/sh IS bash in POSIX mode, so BASH_VERSION alone is not enough --
+# posix mode still rejects process substitution. Check for both.
+case "${SHELLOPTS:-}" in *posix*) exec /usr/bin/env bash "$0" "$@" ;; esac
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec /usr/bin/env bash "$0" "$@"
+fi
+
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -155,7 +165,7 @@ if (( DO_GRANT )); then
   echo "  macOS asks before letting a terminal read a browser's tabs. Approving now"
   echo "  means urls just works afterwards — click OK on each dialog."
   echo
-  while IFS='|' read -r app label; do
+  while IFS='|' read -r app label <&3; do
     app_installed "$app" || continue
     launched=0
     if ! is_running "$app"; then
@@ -179,7 +189,7 @@ if (( DO_GRANT )); then
       2) warn "$label did not respond — it will ask on first use" ;;
     esac
     (( launched )) && osascript -e "tell application \"$app\" to quit" >/dev/null 2>&1 || true
-  done < <("$BIN_DIR/urls" --apps)
+  done 3< <("$BIN_DIR/urls" --apps)
 
   # Downloads is also TCC-protected on modern macOS; surface that prompt too.
   outdir="${URLS_OUTDIR:-$HOME/Downloads}"
@@ -201,6 +211,13 @@ if (( DO_GRANT )); then
   echo
   echo "  These approvals belong to $client. Running urls from a different terminal"
   echo "  app asks once more — that is macOS, not urls."
+fi
+
+# ---------- verify ---------------------------------------------------------
+if v=$("$BIN_DIR/urls" --version 2>&1); then
+  ok "verified: $v runs correctly"
+else
+  die "installed but $BIN_DIR/urls will not run — please open an issue with this output: $v"
 fi
 
 # ---------- done -----------------------------------------------------------
