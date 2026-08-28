@@ -21,18 +21,86 @@ https://www.reddit.com/r/zsh/comments/zvrqmi/how_do_i_move_filesdirectories_excl
 Plain one-per-line output, like `ls -1`. The browser name plus `---` is also a Markdown
 setext heading, so the same text renders with real headings when you paste it into a doc.
 
-## Install
+## Contents
+
+- [**Quick start**](#quick-start) — five commands, copy and paste
+- [**Install**](#install) — clone, run `./install.sh`, done
+  - [About the permission prompts](#about-the-permission-prompts) — what macOS asks, why, and what the installer does about it
+  - [Installer options](#installer-options) — `--prefix`, `--no-keys`, `--no-grant`, `--yes`
+- [**Usage**](#usage) — every flag, with examples
+  - [Key bindings](#key-bindings) — <kbd>ctrl</kbd>+<kbd>x</kbd> <kbd>u</kbd> / <kbd>m</kbd>, and a system-wide hotkey
+  - [Environment](#environment) — `URLS_OUTDIR`, `URLS_FOOTER`, `URLS_BIN_DIR`
+- [**How it works**](#how-it-works) — AppleScript, session stores, and the mozLz4 decoder
+- [Requirements](#requirements) · [Troubleshooting](#troubleshooting) · [Uninstall](#uninstall) · [License](#license)
+
+## Quick start
+
+Five commands. Copy and paste each one in order — every block has a copy button on its right.
+
+**1. Clone the repo** (anywhere you like; `~/Dev` is a fine home)
 
 ```sh
 git clone https://github.com/tasmall17/urls.git
+```
+
+**2. Go into it**
+
+```sh
 cd urls
+```
+
+**3. Run the installer**
+
+```sh
 ./install.sh
+```
+
+macOS will pop up dialogs saying *"Terminal wants to control Safari"* — one per browser.
+**Click OK on every one.** That is the entire setup; see
+[About the permission prompts](#about-the-permission-prompts) for why.
+
+**4. Reload your shell** so the new command is on your `PATH`
+
+```sh
 exec zsh
 ```
 
-That installs the command to `~/.local/bin`, puts it on your `PATH`, adds two terminal key
+**5. Try it**
+
+```sh
+urls
+```
+
+You should see your open tabs, grouped by browser. If you do, you're done — and these now work
+anywhere in your terminal:
+
+```sh
+urls -c      # every open tab -> clipboard
+urls -md     # every open tab -> ~/Downloads/open-urls-<date>.md
+urls -s      # just Safari
+```
+
+Plus two keyboard chords, no typing required: <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>u</kbd>
+copies every tab, <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>m</kbd> writes the Markdown file.
+
+**Updating later**, from inside the repo folder:
+
+```sh
+git pull && ./install.sh
+```
+
+## Install
+
+The [quick start](#quick-start) above *is* the whole procedure. This section covers what those
+commands actually do, and how to change it.
+
+`./install.sh` installs the command to `~/.local/bin`, puts it on your `PATH`, adds two terminal key
 bindings, and walks you through the macOS permission prompts. Re-running the installer is
 always safe — it replaces its own block rather than stacking up duplicates.
+
+> **First time on a new Mac?** Read [About the permission prompts](#about-the-permission-prompts)
+> — it explains the dialogs the installer raises and why clicking OK is the whole setup.
+> Prefer to change what gets installed? See [Installer options](#installer-options).
 
 ### About the permission prompts
 
@@ -152,16 +220,20 @@ are filtered out, so a window full of empty new tabs reports nothing rather than
 **"no open tabs found"** — the browser isn't running, or every tab is a blank new-tab page.
 
 **Safari/Chrome/Brave return nothing while Firefox works** — Automation permission was denied
-for that browser. Re-enable it in System Settings → Privacy & Security → Automation, or reset
+for that browser (see [About the permission prompts](#about-the-permission-prompts)). Re-enable it in System Settings → Privacy & Security → Automation, or reset
 the prompts with `tccutil reset AppleEvents` and re-run `./install.sh` to be asked again.
 
-**`-md` writes nothing** — `~/Downloads` is TCC-protected too. Allow your terminal under
+**`-md` writes nothing** — `~/Downloads` is TCC-protected too, same story as
+[the browser prompts](#about-the-permission-prompts). Allow your terminal under
 System Settings → Privacy & Security → Files and Folders, or point `URLS_OUTDIR` elsewhere.
 
 **A Firefox-family browser is missing a tab you just opened** — wait ~15 seconds for the
 session store to flush. This is a limitation of reading the session file, not a bug.
 
 **`urls: command not found` after installing** — run `exec zsh`, or open a new terminal tab.
+
+**Prompts appear again in a different terminal app** — expected; approvals are per terminal.
+[Why](#about-the-permission-prompts).
 
 ## Uninstall
 
@@ -170,6 +242,8 @@ session store to flush. This is a limitation of reading the session file, not a 
 ```
 
 Removes the command and its shell block. Files you already exported are left alone.
+It reads `URLS_BIN_DIR` the same way [the installer](#installer-options) does, so a
+`--prefix` install uninstalls cleanly with `URLS_BIN_DIR=DIR ./uninstall.sh`.
 
 ## License
 
