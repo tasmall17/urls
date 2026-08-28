@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+# urls — list every open browser tab on macOS as plain, one-per-line text.
+#
+#   urls            every running browser -> stdout
+#   urls -c         ... -> clipboard
+#   urls -md        ... -> ~/Downloads/open-urls-<date>-<time>.md
+#   urls -smd       Safari only -> markdown file
+#   urls -cb        Brave only -> clipboard
+#
+# Flags bundle in any order; "md" is read as one token.
+#   BROWSERS  s safari   b brave    g chrome   e edge   v vivaldi
+#             f firefox  w waterfox z zen      (default: all running)
+#   OUTPUT    c clipboard          md (or m) markdown file
+#   FORMAT    l bullet list ("- <url>")
+#   INFO      h help    --version    --browsers
+#
+# Long forms work too: --safari --clip --md
+# Env: URLS_OUTDIR (default ~/Downloads), URLS_FOOTER=0 to drop the md cheat sheet.
+
+set -uo pipefail
+
+VERSION="1.1.0"
+OUTDIR="${URLS_OUTDIR:-$HOME/Downloads}"
+
+# key | macOS app name | kind | label | mozilla support-dir
+BROWSER_TABLE=(
+  "s|Safari|safari|Safari|"
+  "b|Brave Browser|chromium|Brave|"
+  "g|Google Chrome|chromium|Chrome|"
+  "e|Microsoft Edge|chromium|Edge|"
+  "v|Vivaldi|chromium|Vivaldi|"
+  "f|Firefox|mozilla|Firefox|Firefox"
+  "w|Waterfox|mozilla|Waterfox|Waterfox"
+  "z|Zen|mozilla|Zen|zen"
+)
+ALL_KEYS="sbgevfwz"
+
+die()  { printf 'urls: %s\n' "$*" >&2; exit 1; }
+note() { printf 'urls: %s\n' "$*" >&2; }
+
+usage() { awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "$0"; exit 0; }
+
+list_browsers() {
+  printf '%-5s %-10s %-16s %s\n' KEY NAME APP KIND
+  local row; for row in "${BROWSER_TABLE[@]}"; do
+    IFS='|' read -r k app kind label _ <<< "$row"
+    printf '%-5s %-10s %-16s %s\n' "-$k" "$label" "$app" "$kind"
+  done
+  exit 0
+}
+
+field() {  # $1 = key, $2 = field index (2=app 3=kind 4=label 5=profiledir)
+  local row; for row in "${BROWSER_TABLE[@]}"; do
+    [[ ${row%%|*} == "$1" ]] || continue
+    printf '%s' "$(printf '%s' "$row" | cut -d'|' -f"$2")"; return
+  done
+}
+
+# ---------- flags ----------------------------------------------------------
+WANT=""; CLIP=0; MD=0; LIST=0; EXPLICIT=0
+raw=""
+for a in "$@"; do
+  while [[ $a == -* ]]; do a=${a#-}; done
+  case $a in
+    safari)    WANT+="s"; EXPLICIT=1; continue ;;
+    brave)     WANT+="b"; EXPLICIT=1; continue ;;
+    chrome)    WANT+="g"; EXPLICIT=1; continue ;;
+    edge)      WANT+="e"; EXPLICIT=1; continue ;;
+    vivaldi)   WANT+="v"; EXPLICIT=1; continue ;;
+    firefox)   WANT+="f"; EXPLICIT=1; continue ;;
+    waterfox)  WANT+="w"; EXPLICIT=1; continue ;;
+    zen)       WANT+="z"; EXPLICIT=1; continue ;;
+    clip|copy) CLIP=1;  continue ;;
+    list)      LIST=1;  continue ;;
+    browsers)  list_browsers ;;
+    version)   printf 'urls %s\n' "$VERSION"; exit 0 ;;
+    help)      usage ;;
+  esac
+  raw+="$a"
+done
+
+case $raw in *md*) MD=1; raw=${raw//md/} ;; esac
+
+for (( i=0; i<${#raw}; i++ )); do
+  ch=${raw:$i:1}
+  case $ch in
+    c) CLIP=1 ;;
+    m|d) MD=1 ;;
+    l) LIST=1 ;;
+    h) usage ;;
+    *) if [[ $ALL_KEYS == *"$ch"* ]]; then WANT+="$ch"; EXPLICIT=1
+       else die "unknown flag '-$ch'  (try: urls -h)"; fi ;;
+  esac
+done
+
+[[ -z $WANT ]] && WANT="$ALL_KEYS"
+
+# ---------- collectors -----------------------------------------------------
+app_running() { [[ $(osascript -e "application \"$1\" is running" 2>/dev/null) == true ]]; }
+proc_running() { pgrep -qx "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" 2>/dev/null; }
+
+tabs_chromium() {
+  osascript <<OSA 2>/dev/null
+tell application "$1"
+	set out to {}
+	repeat with w in windows
+		try
+			repeat with t in tabs of w
+				try
+					set end of out to (URL of t as text)
+				end try
+			end repeat
+		end try
+	end repeat
+end tell
+set AppleScript's text item delimiters to linefeed
+return out as text
+OSA
+}
+
+tabs_safari() {
+  osascript <<'OSA' 2>/dev/null
+tell application "Safari"
+	set out to {}
+	repeat with w in windows
+		try
+			repeat with t in tabs of w
+				try
+					set end of out to (URL of t as text)
+				end try
+			end repeat
+		end try
+	end repeat
+end tell
+set AppleScript's text item delimiters to linefeed
+return out as text
+OSA
+}
+
+tabs_mozilla() {   # $1 = support-dir name under ~/Library/Application Support
+  command -v python3 >/dev/null || { note "python3 not found; skipping $1"; return; }
+  python3 - "$HOME/Library/Application Support/$1" <<'PY' 2>/dev/null
+import sys, os, json, glob
+
+def lz4_block(src):
+    """Decode a raw LZ4 block. Pure Python so no pip install is needed."""
+    dst = bytearray(); i = 0; n = len(src)
+    while i < n:
+        tok = src[i]; i += 1
+        lit = tok >> 4
+        if lit == 15:
+            while True:
+                b = src[i]; i += 1; lit += b
+                if b != 255: break
+        dst += src[i:i+lit]; i += lit
+        if i + 1 >= n: break          # final sequence is literals only
+        off = src[i] | (src[i+1] << 8); i += 2
+        ml = tok & 0x0F
+        if ml == 15:
+            while True:
+                b = src[i]; i += 1; ml += b
+                if b != 255: break
+        ml += 4
+        start = len(dst) - off
+        if off >= ml:                 # non-overlapping match: bulk copy
+            dst += dst[start:start+ml]
+        else:                         # overlapping run: byte by byte
+            for j in range(ml): dst.append(dst[start+j])
+    return bytes(dst)
+
+def read_session(path):
+    with open(path, 'rb') as f: raw = f.read()
+    if raw[:8] != b'mozLz40\0': return raw          # plain json fallback
+    return lz4_block(raw[12:])
+
+root = sys.argv[1]
+cands = []
+for pat in ('Profiles/*/sessionstore-backups/recovery.jsonlz4',
+            'Profiles/*/sessionstore-backups/previous.jsonlz4',
+            'Profiles/*/sessionstore.jsonlz4'):
+    cands += glob.glob(os.path.join(root, pat))
+if not cands: sys.exit(0)
+
+try:
+    data = json.loads(read_session(max(cands, key=os.path.getmtime)).decode('utf-8', 'replace'))
+except Exception:
+    sys.exit(0)
+
+for w in data.get('windows', []):              # _closedWindows deliberately ignored
+    for t in w.get('tabs', []):                # so are _closedTabs
+        ents = t.get('entries') or []
+        if not ents: continue
+        i = max(0, min(int(t.get('index', len(ents))) - 1, len(ents) - 1))
+        u = ents[i].get('url', '')
+        if u: print(u)
+PY
+}
+
+# ---------- report ---------------------------------------------------------
+stamp=$(date "+%Y-%m-%d %H:%M")
+body=""; found=0; labels=""
+
+emit() {
+  local label=$1 urls=$2
+  urls=$(printf '%s\n' "$urls" \
+    | grep -v '^[[:space:]]*$' \
+    | grep -vE '^(favorites://|topsites://|about:(blank|newtab|home|privatebrowsing|sessionrestore)|chrome://newtab)')
+  [[ -z $urls ]] && return
+  (( LIST )) && urls=$(printf '%s\n' "$urls" | sed 's/^/- /')
+  [[ -n $body ]] && body+=$'\n'
+  body+="$label — $stamp"$'\n'"---"$'\n'"$urls"$'\n'
+  labels+="$label "; found=1
+}
+
+for (( i=0; i<${#WANT}; i++ )); do
+  k=${WANT:$i:1}
+  app=$(field "$k" 2); kind=$(field "$k" 3); label=$(field "$k" 4); moz=$(field "$k" 5)
+  case $kind in
+    safari)   app_running "$app" && emit "$label" "$(tabs_safari)" ;;
+    chromium) app_running "$app" && emit "$label" "$(tabs_chromium "$app")" ;;
+    mozilla)
+      if proc_running "$app"; then
+        emit "$label" "$(tabs_mozilla "$moz")"
+      elif (( EXPLICIT )); then
+        out=$(tabs_mozilla "$moz")
+        [[ -n $out ]] && note "$label is not running — showing its last saved session"
+        emit "$label" "$out"
+      fi ;;
+  esac
+done
+
+(( found )) || die "no open tabs found. Is the browser running? Safari/Chromium browsers also need Automation permission — see the README."
+
+# ---------- footer ---------------------------------------------------------
+md_footer() {
+  [[ ${URLS_FOOTER:-1} == 0 ]] && return
+  cat <<'FOOT'
+
+---
+
+**`urls` cheat sheet**
+
+```
+urls          all running browsers -> stdout
+urls -c       -> clipboard
+urls -md      -> ~/Downloads/open-urls-<date>-<time>.md
+urls -s -b -g -e -v -f -w -z   safari brave chrome edge vivaldi firefox waterfox zen
+urls -smd     safari only -> md file      urls -cb   brave -> clipboard
+urls -l       bullet-list markdown        urls -h    help
+```
+FOOT
+}
+
+# ---------- output ---------------------------------------------------------
+count=$(printf '%s' "$body" | grep -cE '^(- )?[a-z][a-z0-9+.-]*://')
+did=0
+
+if (( CLIP )); then
+  printf '%s' "$body" | pbcopy
+  note "copied $count URLs to clipboard"
+  did=1
+fi
+
+if (( MD )); then
+  tag=""
+  [[ $(printf '%s' "$labels" | wc -w) -eq 1 ]] && tag="-$(printf '%s' "${labels% }" | tr '[:upper:]' '[:lower:]')"
+  mkdir -p "$OUTDIR"
+  out="$OUTDIR/open-urls${tag}-$(date '+%Y-%m-%d-%H%M').md"
+  { printf '%s' "$body"; md_footer; } > "$out"
+  note "wrote $count URLs to $out"
+  did=1
+fi
+
+(( did )) || printf '%s' "$body"
