@@ -5,6 +5,7 @@
 #   ./install.sh --prefix DIR    install the command somewhere else
 #   ./install.sh --no-keys       skip the ⌃X shortcuts, just install the command
 #   ./install.sh --no-grant      skip the browser permission step
+#   ./install.sh --shell bash    set up bash (or: zsh, both) instead of your login shell
 #   ./install.sh --yes           don't ask before opening a browser to authorize it
 #   ./install.sh --help
 
@@ -14,6 +15,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${URLS_BIN_DIR:-$HOME/.local/bin}"
 ADD_KEYS=1
 DO_GRANT=1
+TARGET_SHELL=auto
 ASSUME_YES=0
 BEGIN="# >>> urls >>>"
 END="# <<< urls <<<"
@@ -28,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --prefix) BIN_DIR="${2:-}"; [[ -n $BIN_DIR ]] || die "--prefix needs a directory"; shift 2 ;;
     --no-keys) ADD_KEYS=0; shift ;;
     --no-grant) DO_GRANT=0; shift ;;
+    --shell) TARGET_SHELL="${2:-}"; [[ -n $TARGET_SHELL ]] || die "--shell needs zsh, bash or both"; shift 2 ;;
     -y|--yes) ASSUME_YES=1; shift ;;
     -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
     *) die "unknown option '$1' (try --help)" ;;
@@ -52,33 +55,36 @@ install -m 755 "$REPO_DIR/bin/urls" "$BIN_DIR/urls"
 ok "installed $BIN_DIR/urls"
 
 # ---------- shell integration ---------------------------------------------
-shell_name=$(basename "${SHELL:-/bin/zsh}")
-case $shell_name in
-  zsh)  RC="$HOME/.zshrc" ;;
-  bash) RC="$HOME/.bash_profile" ;;
-  *)    RC="$HOME/.profile"; warn "unrecognised shell '$shell_name' — key bindings skipped"; ADD_KEYS=0 ;;
+login_shell=$(basename "${SHELL:-/bin/zsh}")
+[[ $TARGET_SHELL == auto ]] && TARGET_SHELL=$login_shell
+
+RC_FILES=()
+add_bash_targets() {
+  # Non-login interactive shells read ~/.bashrc; login shells read only the FIRST
+  # of .bash_profile / .bash_login / .profile that exists. Cover both, and never
+  # create a .bash_profile — doing so would shadow an existing .profile.
+  RC_FILES+=("$HOME/.bashrc")
+  local f login_rc=""
+  for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+    [[ -f $f ]] && { login_rc=$f; break; }
+  done
+  [[ -z $login_rc ]] && login_rc="$HOME/.bash_profile"
+  RC_FILES+=("$login_rc")
+}
+
+case $TARGET_SHELL in
+  zsh)  RC_FILES=("$HOME/.zshrc") ;;
+  bash) add_bash_targets ;;
+  both) RC_FILES=("$HOME/.zshrc"); add_bash_targets ;;
+  *)    RC_FILES=("$HOME/.profile")
+        warn "unrecognised shell '$TARGET_SHELL' — key bindings skipped"; ADD_KEYS=0 ;;
 esac
-touch "$RC"
 
-# drop any previous managed block so re-running is always safe
-if grep -qF "$BEGIN" "$RC"; then
-  tmp=$(mktemp)
-  awk -v b="$BEGIN" -v e="$END" '
-    index($0,b) {skip=1} !skip {print} index($0,e) {skip=0}' "$RC" > "$tmp"
-  mv "$tmp" "$RC"
-  ok "removed previous urls block from $(basename "$RC")"
-fi
-
-# trim trailing blank lines so repeat installs never grow the file
-tmp=$(mktemp)
-awk '{l[NR]=$0} END{last=NR; while(last>0 && l[last] ~ /^[[:space:]]*$/) last--;
-      for(i=1;i<=last;i++) print l[i]}' "$RC" > "$tmp"
-mv "$tmp" "$RC"
-
-{
+emit_block() {  # $1 = rc file, $2 = zsh|bash
   printf '\n%s\n' "$BEGIN"
   printf 'case ":$PATH:" in *":%s:"*) ;; *) export PATH="%s:$PATH" ;; esac\n' "$BIN_DIR" "$BIN_DIR"
-  if (( ADD_KEYS )) && [[ $shell_name == zsh ]]; then
+  (( ADD_KEYS )) || { printf '%s\n' "$END"; return; }
+  if [[ $2 == zsh ]]; then
     cat <<'ZSH'
 if [[ -o interactive ]] && command -v urls >/dev/null 2>&1; then
   _urls_copy_widget() { local m; m=$(urls -c 2>&1);  zle -M "$m"; }
@@ -89,7 +95,7 @@ if [[ -o interactive ]] && command -v urls >/dev/null 2>&1; then
   bindkey '^Xm' _urls_md_widget     # ctrl-x m  -> all open tabs to ~/Downloads/*.md
 fi
 ZSH
-  elif (( ADD_KEYS )) && [[ $shell_name == bash ]]; then
+  else
     cat <<'BASH'
 if [[ $- == *i* ]] && command -v urls >/dev/null 2>&1; then
   bind -x '"\C-xu": urls -c'    # ctrl-x u  -> all open tabs to the clipboard
@@ -98,8 +104,32 @@ fi
 BASH
   fi
   printf '%s\n' "$END"
-} >> "$RC"
-ok "updated $RC"
+}
+
+seen=""
+for RC in "${RC_FILES[@]}"; do
+  case " $seen " in *" $RC "*) continue ;; esac   # same file listed twice
+  seen="$seen $RC"
+  [[ $(basename "$RC") == .zshrc ]] && kind=zsh || kind=bash
+  touch "$RC"
+
+  # drop any previous managed block so re-running is always safe
+  if grep -qF "$BEGIN" "$RC"; then
+    tmp=$(mktemp)
+    awk -v b="$BEGIN" -v e="$END" '
+      index($0,b) {skip=1} !skip {print} index($0,e) {skip=0}' "$RC" > "$tmp"
+    mv "$tmp" "$RC"
+  fi
+
+  # trim trailing blank lines so repeat installs never grow the file
+  tmp=$(mktemp)
+  awk '{l[NR]=$0} END{last=NR; while(last>0 && l[last] ~ /^[[:space:]]*$/) last--;
+        for(i=1;i<=last;i++) print l[i]}' "$RC" > "$tmp"
+  mv "$tmp" "$RC"
+
+  emit_block "$RC" "$kind" >> "$RC"
+  ok "updated $RC ($kind)"
+done
 (( ADD_KEYS )) && ok "bound ctrl-x u (clipboard) and ctrl-x m (markdown file)"
 
 # ---------- browser access -------------------------------------------------
@@ -177,7 +207,7 @@ fi
 echo
 bold "Installed. Next:"
 cat <<EOF
-  1. Reload your shell:      exec $shell_name
+  1. Reload your shell:      exec $login_shell
   2. Try it:                 urls
      ctrl-x u  copies every open tab      ctrl-x m  writes a markdown file
 

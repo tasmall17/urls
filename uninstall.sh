@@ -12,7 +12,8 @@ printf '\033[1m%s\033[0m\n' "urls — uninstalling"
 if [[ -f $BIN_DIR/urls ]]; then rm -f "$BIN_DIR/urls"; ok "removed $BIN_DIR/urls"
 else ok "no command at $BIN_DIR/urls"; fi
 
-for RC in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+for RC in "$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.bashrc" \
+          "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
   [[ -f $RC ]] || continue
   grep -qF "$BEGIN" "$RC" || continue
   tmp=$(mktemp)

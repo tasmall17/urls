@@ -29,6 +29,7 @@ setext heading, so the same text renders with real headings when you paste it in
   - [Installer options](#installer-options) — `--prefix`, `--no-keys`, `--no-grant`, `--yes`
 - [**Usage**](#usage) — every flag, with examples
   - [Key bindings](#key-bindings) — <kbd>ctrl</kbd>+<kbd>x</kbd> <kbd>u</kbd> / <kbd>m</kbd>, and a system-wide hotkey
+  - [Shell support](#shell-support) — zsh and bash, and which rc files get touched
   - [Environment](#environment) — `URLS_OUTDIR`, `URLS_FOOTER`, `URLS_BIN_DIR`
 - [**How it works**](#how-it-works) — AppleScript, session stores, and the mozLz4 decoder
 - [Requirements](#requirements) · [Troubleshooting](#troubleshooting) · [Uninstall](#uninstall) · [License](#license)
@@ -133,6 +134,7 @@ produces one more round of prompts. That's macOS's model, not something `urls` c
 |---|---|
 | `--prefix DIR` | install the command somewhere other than `~/.local/bin` |
 | `--no-keys` | skip the <kbd>ctrl</kbd>+<kbd>x</kbd> bindings |
+| `--shell zsh\|bash\|both` | set up a shell other than your login shell |
 | `--no-grant` | skip the permission step entirely |
 | `--yes` | don't ask before opening a browser to authorize it |
 
@@ -170,6 +172,30 @@ The installer binds two chords in your interactive shell:
 | <kbd>ctrl</kbd>+<kbd>x</kbd> then <kbd>m</kbd> | all open tabs → Markdown file |
 
 They run without disturbing whatever you were typing. Skip them with `./install.sh --no-keys`.
+
+### Shell support
+
+**zsh and bash are both fully supported**, including the key bindings. The installer detects
+your login shell and sets up the matching one; `--shell bash`, `--shell zsh` or `--shell both`
+overrides that.
+
+`urls` itself is a plain bash script and has no zsh dependency — it runs fine under the
+bash 3.2 that Apple still ships, so there's nothing to install and no newer bash required.
+Only the key bindings are shell-specific: zsh gets ZLE widgets bound with `bindkey`, bash gets
+`bind -x`. Both were tested by driving a real terminal session and pressing the chord.
+
+Where the block goes:
+
+| Shell | Files touched |
+|---|---|
+| zsh | `~/.zshrc` |
+| bash | `~/.bashrc` **and** your login file — the first existing of `~/.bash_profile`, `~/.bash_login`, `~/.profile` |
+
+bash needs both because a login shell (what Terminal.app starts) reads only the login file,
+while a plain `bash` inside another shell reads only `~/.bashrc` — put the block in one and it
+silently does nothing in the other half of the time. The installer will **not** create a
+`~/.bash_profile` when you already have a `~/.profile`, since that would stop bash from ever
+reading `~/.profile` again.
 
 For a hotkey that works when the terminal *isn't* focused, make a Shortcuts.app shortcut with
 a **Run Shell Script** action calling `~/.local/bin/urls -c`, then assign it a key in the
@@ -212,6 +238,7 @@ are filtered out, so a window full of empty new tabs reports nothing rather than
 ## Requirements
 
 - macOS (uses AppleScript and `pbcopy`)
+- zsh or bash — including Apple's stock bash 3.2, no upgrade needed
 - `python3` — only for the Firefox family. Stock macOS Python is fine; if it's missing,
   `xcode-select --install` provides it. Everything else still works without it.
 
@@ -230,7 +257,12 @@ System Settings → Privacy & Security → Files and Folders, or point `URLS_OUT
 **A Firefox-family browser is missing a tab you just opened** — wait ~15 seconds for the
 session store to flush. This is a limitation of reading the session file, not a bug.
 
-**`urls: command not found` after installing** — run `exec zsh`, or open a new terminal tab.
+**`urls: command not found` after installing** — run `exec zsh` (or `exec bash`), or open a
+new terminal tab.
+
+**Bindings work in one bash session but not another** — you likely installed before this was
+fixed; re-run `./install.sh` and it will cover both `~/.bashrc` and your login file. See
+[Shell support](#shell-support).
 
 **Prompts appear again in a different terminal app** — expected; approvals are per terminal.
 [Why](#about-the-permission-prompts).
