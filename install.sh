@@ -4,6 +4,8 @@
 #   ./install.sh                 install to ~/.local/bin + add key bindings
 #   ./install.sh --prefix DIR    install the command somewhere else
 #   ./install.sh --no-keys       skip the ⌃X shortcuts, just install the command
+#   ./install.sh --no-grant      skip the browser permission step
+#   ./install.sh --yes           don't ask before opening a browser to authorize it
 #   ./install.sh --help
 
 set -euo pipefail
@@ -11,6 +13,8 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${URLS_BIN_DIR:-$HOME/.local/bin}"
 ADD_KEYS=1
+DO_GRANT=1
+ASSUME_YES=0
 BEGIN="# >>> urls >>>"
 END="# <<< urls <<<"
 
@@ -23,7 +27,9 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --prefix) BIN_DIR="${2:-}"; [[ -n $BIN_DIR ]] || die "--prefix needs a directory"; shift 2 ;;
     --no-keys) ADD_KEYS=0; shift ;;
-    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --no-grant) DO_GRANT=0; shift ;;
+    -y|--yes) ASSUME_YES=1; shift ;;
+    -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
     *) die "unknown option '$1' (try --help)" ;;
   esac
 done
@@ -96,14 +102,84 @@ BASH
 ok "updated $RC"
 (( ADD_KEYS )) && ok "bound ctrl-x u (clipboard) and ctrl-x m (markdown file)"
 
+# ---------- browser access -------------------------------------------------
+# macOS gates Apple Events behind TCC. Nothing can grant that permission from a
+# script (the TCC store is SIP-protected), but we CAN trigger each prompt now so
+# the user approves them all here instead of being ambushed on first real use.
+app_installed() { osascript -e "id of app \"$1\"" >/dev/null 2>&1; }
+is_running()    { [[ $(osascript -e "application \"$1\" is running" 2>/dev/null) == true ]]; }
+
+probe_app() {   # 0 = allowed, 1 = denied, 2 = no response
+  local err
+  err=$(osascript -e "tell application \"$1\" to count windows" 2>&1 >/dev/null) || true
+  [[ -z $err ]] && return 0
+  case $err in
+    *-1743*|*"Not authorized"*|*"not allowed"*) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+if (( DO_GRANT )); then
+  echo
+  bold "Browser access"
+  echo "  macOS asks before letting a terminal read a browser's tabs. Approving now"
+  echo "  means urls just works afterwards — click OK on each dialog."
+  echo
+  while IFS='|' read -r app label; do
+    app_installed "$app" || continue
+    launched=0
+    if ! is_running "$app"; then
+      if (( ASSUME_YES )); then
+        reply=y
+      elif [[ -t 0 ]]; then
+        printf '  %s is not running. Open it briefly to authorize now? [y/N] ' "$label"
+        read -r reply || reply=n
+      else
+        reply=n
+      fi
+      case ${reply:-n} in
+        y|Y|yes|YES) launched=1 ;;
+        *) warn "$label skipped — it will ask the first time you use it"; continue ;;
+      esac
+    fi
+    rc=0; probe_app "$app" || rc=$?
+    case $rc in
+      0) ok "$label authorized" ;;
+      1) warn "$label denied — re-enable under System Settings > Privacy & Security > Automation" ;;
+      2) warn "$label did not respond — it will ask on first use" ;;
+    esac
+    (( launched )) && osascript -e "tell application \"$app\" to quit" >/dev/null 2>&1 || true
+  done < <("$BIN_DIR/urls" --apps)
+
+  # Downloads is also TCC-protected on modern macOS; surface that prompt too.
+  outdir="${URLS_OUTDIR:-$HOME/Downloads}"
+  mkdir -p "$outdir" 2>/dev/null || true
+  if : > "$outdir/.urls-write-check" 2>/dev/null; then
+    rm -f "$outdir/.urls-write-check"
+    ok "can write exports to $outdir"
+  else
+    warn "cannot write to $outdir — allow it under System Settings > Privacy & Security > Files and Folders"
+  fi
+
+  case "${TERM_PROGRAM:-}" in
+    Apple_Terminal) client="Terminal" ;;
+    iTerm.app) client="iTerm" ;;
+    vscode) client="VS Code" ;;
+    "") client="this terminal" ;;
+    *) client="$TERM_PROGRAM" ;;
+  esac
+  echo
+  echo "  These approvals belong to $client. Running urls from a different terminal"
+  echo "  app asks once more — that is macOS, not urls."
+fi
+
 # ---------- done -----------------------------------------------------------
 echo
 bold "Installed. Next:"
 cat <<EOF
   1. Reload your shell:      exec $shell_name
   2. Try it:                 urls
-  3. First run against Safari/Brave/Chrome, macOS will ask
-     "Terminal wants to control Safari" — click OK. It asks once per browser.
+     ctrl-x u  copies every open tab      ctrl-x m  writes a markdown file
 
 Optional system-wide hotkey (works even when the terminal is not focused):
   Shortcuts.app -> New Shortcut -> "Run Shell Script" -> $BIN_DIR/urls -c

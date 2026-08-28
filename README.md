@@ -30,12 +30,43 @@ cd urls
 exec zsh
 ```
 
-That installs the command to `~/.local/bin`, puts it on your `PATH`, and adds two terminal
-key bindings. Re-running the installer is always safe — it replaces its own block rather
-than stacking up duplicates.
+That installs the command to `~/.local/bin`, puts it on your `PATH`, adds two terminal key
+bindings, and walks you through the macOS permission prompts. Re-running the installer is
+always safe — it replaces its own block rather than stacking up duplicates.
 
-The **first time** you point it at Safari or a Chromium browser, macOS asks
-*"Terminal wants to control Safari"*. Click OK. It asks once per browser, then never again.
+### About the permission prompts
+
+macOS gates Apple Events behind TCC, so a terminal cannot read a browser's tabs until you
+approve it. **No script can grant that for you** — the permission store is SIP-protected and
+`tccutil` can only reset entries, never create them. What the installer does instead is
+*trigger* every prompt up front, so you click OK a few times during install and never get
+ambushed later:
+
+```
+Browser access
+  ✓ Safari authorized
+  ✓ Brave authorized
+  ✓ Chrome authorized
+  ✓ can write exports to /Users/you/Downloads
+```
+
+It only touches browsers you actually have installed. For one that isn't running it asks
+before opening it, since authorizing requires the app to be up; answer `n` and that browser
+simply prompts on first use instead. `--yes` approves those launches without asking,
+`--no-grant` skips the whole step.
+
+One honest caveat: the approval belongs to the **terminal app** you ran the installer from.
+Launching `urls` from a different terminal — iTerm when you installed from Terminal, say —
+produces one more round of prompts. That's macOS's model, not something `urls` can avoid.
+
+### Installer options
+
+| Flag | Effect |
+|---|---|
+| `--prefix DIR` | install the command somewhere other than `~/.local/bin` |
+| `--no-keys` | skip the <kbd>ctrl</kbd>+<kbd>x</kbd> bindings |
+| `--no-grant` | skip the permission step entirely |
+| `--yes` | don't ask before opening a browser to authorize it |
 
 ## Usage
 
@@ -120,9 +151,12 @@ are filtered out, so a window full of empty new tabs reports nothing rather than
 
 **"no open tabs found"** — the browser isn't running, or every tab is a blank new-tab page.
 
-**Safari/Chrome/Brave return nothing while Firefox works** — Automation permission was denied.
-Re-enable it in System Settings → Privacy & Security → Automation, or reset the prompt with
-`tccutil reset AppleEvents` and run `urls` again.
+**Safari/Chrome/Brave return nothing while Firefox works** — Automation permission was denied
+for that browser. Re-enable it in System Settings → Privacy & Security → Automation, or reset
+the prompts with `tccutil reset AppleEvents` and re-run `./install.sh` to be asked again.
+
+**`-md` writes nothing** — `~/Downloads` is TCC-protected too. Allow your terminal under
+System Settings → Privacy & Security → Files and Folders, or point `URLS_OUTDIR` elsewhere.
 
 **A Firefox-family browser is missing a tab you just opened** — wait ~15 seconds for the
 session store to flush. This is a limitation of reading the session file, not a bug.

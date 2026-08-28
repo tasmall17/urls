@@ -49,6 +49,14 @@ list_browsers() {
   exit 0
 }
 
+apps_list() {  # AppleScript-driven browsers only, as "App Name|Label" — used by install.sh
+  local row; for row in "${BROWSER_TABLE[@]}"; do
+    IFS='|' read -r _ app kind label _ <<< "$row"
+    [[ $kind == safari || $kind == chromium ]] && printf '%s|%s\n' "$app" "$label"
+  done
+  exit 0
+}
+
 field() {  # $1 = key, $2 = field index (2=app 3=kind 4=label 5=profiledir)
   local row; for row in "${BROWSER_TABLE[@]}"; do
     [[ ${row%%|*} == "$1" ]] || continue
@@ -73,6 +81,7 @@ for a in "$@"; do
     clip|copy) CLIP=1;  continue ;;
     list)      LIST=1;  continue ;;
     browsers)  list_browsers ;;
+    apps)      apps_list ;;
     version)   printf 'urls %s\n' "$VERSION"; exit 0 ;;
     help)      usage ;;
   esac
